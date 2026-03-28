@@ -784,7 +784,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{DIV}\n"
         f"🔧 *Settings:*\n"
         f"• Threads: `{THREADS}`\n"
-        f"• Proxy: `{DEFAULT_PROXY_STR}`\n"
         f"{DIV}\n"
         f"_{CREDIT}_"
     )
@@ -1067,7 +1066,6 @@ async def run_check_job(update: Update, context: ContextTypes.DEFAULT_TYPE, cook
         f"📂 Source: `{source}`\n"
         f"🍪 Cookies: `{total}`\n"
         f"🧵 Threads: `{THREADS}`\n"
-        f"🌐 Proxy: `{DEFAULT_PROXY_STR}`\n"
         f"{DIV}",
         parse_mode=ParseMode.MARKDOWN,
     )
@@ -1104,7 +1102,6 @@ async def run_check_job(update: Update, context: ContextTypes.DEFAULT_TYPE, cook
 
             if res["has_sub"]:
                 hit_txt = format_hit_result(res, nfid, snfid)
-                hit_tg = format_hit_tg(res, nfid, snfid)
                 logger.info(
                     "[HIT] Email: %s | Plan: %s | Country: %s | Max Streams: %s | "
                     "Days Remaining: %s | Payment: %s | Profiles: %s | "
@@ -1119,7 +1116,7 @@ async def run_check_job(update: Update, context: ContextTypes.DEFAULT_TYPE, cook
                     nfid,
                     f"; SecureNetflixId={snfid}" if snfid else "",
                 )
-                return {"status": "hit", "hit_txt": hit_txt, "hit_tg": hit_tg,
+                return {"status": "hit", "hit_txt": hit_txt,
                         "email": res.get("email", "?"), "plan": res.get("plan", "?"),
                         "country": res.get("country", "?"), "days": days, "idx": idx,
                         "nfid": nfid, "snfid": snfid}
@@ -1178,16 +1175,6 @@ async def run_check_job(update: Update, context: ContextTypes.DEFAULT_TYPE, cook
                     else:
                         job["bad"] = job.get("bad", 0) + 1
                         bad_lines.append(f"BAD | {r.get('msg', 'Unknown error')}")
-
-            if status == "hit":
-                try:
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=r["hit_tg"],
-                        parse_mode=ParseMode.MARKDOWN,
-                    )
-                except Exception:
-                    pass
 
             now = time.time()
             if now - last_update_time[0] >= UPDATE_INTERVAL:
