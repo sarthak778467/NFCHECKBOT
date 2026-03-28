@@ -787,7 +787,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{DIV}\n"
         f"_{CREDIT}_"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    try:
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    except Exception:
+        pass
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1247,6 +1250,21 @@ async def run_check_job(update: Update, context: ContextTypes.DEFAULT_TYPE, cook
             pass
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    from telegram.error import RetryAfter, TimedOut, NetworkError, Forbidden
+    err = context.error
+    if isinstance(err, RetryAfter):
+        logger.warning("Flood control hit, retry after %s seconds.", err.retry_after)
+    elif isinstance(err, TimedOut):
+        logger.warning("Telegram request timed out: %s", err)
+    elif isinstance(err, NetworkError):
+        logger.warning("Telegram network error: %s", err)
+    elif isinstance(err, Forbidden):
+        logger.warning("Bot was blocked by user.")
+    else:
+        logger.error("Unhandled error: %s", err, exc_info=context.error)
+
+
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -1258,6 +1276,7 @@ def main():
     app.add_handler(CommandHandler("users", cmd_users))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_error_handler(error_handler)
 
     logger.info("Netflix Cookie Checker Bot started (polling).")
     app.run_polling(drop_pending_updates=True)
