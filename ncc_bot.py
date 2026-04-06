@@ -190,6 +190,7 @@ def calc_days_remaining(billing_str: str) -> str:
         "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f",
         "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ",
         "%b %d, %Y", "%b %d %Y", "%d %b %Y", "%d-%m-%Y", "%m-%d-%Y",
+        "%Y/%m/%d", "%d %b, %Y", "%B %d, %Y", "%d %B, %Y",
     ]:
         try:
             billing_date = datetime.strptime(billing_str, fmt)
@@ -356,6 +357,8 @@ def check_cookie(nfid: str, snfid: str = "", proxy: dict = None) -> dict:
         "rejoin" in page_lower and "plan" in page_lower,
         "your membership has been canceled" in page_lower,
         "resubscribe" in page_lower,
+        "add a plan" in page_lower,
+        "pick your plan" in page_lower,
     ]
     if any(no_sub_signals):
         result["valid"] = True
@@ -423,36 +426,77 @@ def check_cookie(nfid: str, snfid: str = "", proxy: dict = None) -> dict:
 
 
 def _extract_account_info(html: str, result: dict):
-    plan_m = re.findall(r'"localizedPlanName":\{"fieldType":"String","value":"([^"]+)"', html)
-    if not plan_m:
-        plan_m = re.findall(r'"GrowthPlan","name":"([^"]+)"', html)
-    if not plan_m:
-        plan_m = re.findall(r'data-uia="plan-label"[^>]*>([^<]+)', html)
-    if not plan_m:
-        plan_m = re.findall(r'"planName":"([^"]+)"', html)
-    if plan_m:
-        result["plan"] = plan_m[0].strip()
+    """Enhanced extraction with comprehensive regex patterns for Netflix account data."""
+    # Plan extraction - expanded patterns
+    plan_patterns = [
+        r'"localizedPlanName":\{"fieldType":"String","value":"([^"]+)"',
+        r'"GrowthPlan","name":"([^"]+)"',
+        r'data-uia="plan-label"[^>]*>([^<]+)',
+        r'"planName":"([^"]+)"',
+        r'"currentPlan":\{[^}]*"name":"([^"]+)"',
+        r'"plan":\{[^}]*"localizedName":"([^"]+)"',
+        r'class="[^"]*plan[^"]*"[^>]*>\s*<span[^>]*>([^<]+)',
+        r'Your ([^<]+ (?:plan|membership))',
+        r'class="account-section[^"]*"[^>]*>\s*<h[12][^>]*>([^<]+)',
+        r'"membershipType":"([^"]+)"',
+        r'"planTier":"([^"]+)"',
+        r'subscription[^>]*>\s*<[^>]*>([^<]+(?:Standard|Premium|Basic|Mobile)[^<]*)',
+        r'Plan</td>\s*<td[^>]*>([^<]+)',
+        r'"planDisplayName":"([^"]+)"',
+        r'"planLabel":"([^"]+)"',
+        r'plan[^>]*>\s*<[^>]*>(Standard|Premium|Basic|Mobile)[^<]*',
+    ]
+    for pat in plan_patterns:
+        m = re.findall(pat, html, re.IGNORECASE)
+        if m:
+            result["plan"] = m[0].strip()
+            break
 
-    email_m = re.findall(r'"email":\{"__typename":"GrowthClearStringValue","value":"([^"]+)"', html)
-    if not email_m:
-        email_m = re.findall(r'"email":\{[^}]*"value"\s*:\s*"([^"]+)"', html)
-    if not email_m:
-        email_m = re.findall(r'"memberEmail":"([^"]+)"', html)
-    if not email_m:
-        email_m = re.findall(r'data-uia="account-email"[^>]*>([^<]+)', html)
-    if not email_m:
-        email_m = re.findall(r'"email":"([^"]+)"', html)
-    if email_m:
-        val = _clean_value(email_m[0].strip())
-        if val and "@" in val:
-            result["email"] = val
+    # Email extraction - expanded patterns
+    email_patterns = [
+        r'"email":\{"__typename":"GrowthClearStringValue","value":"([^"]+)"',
+        r'"email":\{[^}]*"value"\s*:\s*"([^"]+)"',
+        r'"memberEmail":"([^"]+)"',
+        r'data-uia="account-email"[^>]*>([^<]+)',
+        r'"email":"([^"]+)"',
+        r'"accountEmail":"([^"]+)"',
+        r'"userEmail":"([^"]+)"',
+        r'"loginEmail":"([^"]+)"',
+        r'Account.*email[^>]*>([^<]+@[^<]+)',
+        r'class="[^"]*email[^"]*"[^>]*>([^<]+@[^<]+)',
+        r'"contactEmail":"([^"]+)"',
+        r'email[^>]*>([^<]+@[^<]+)',
+        r'"userInfo"[^}]*"email":"([^"]+)"',
+    ]
+    for pat in email_patterns:
+        m = re.findall(pat, html)
+        if m:
+            val = _clean_value(m[0].strip())
+            if val and "@" in val and "." in val.split("@")[-1]:
+                result["email"] = val
+                break
 
-    since_m = re.findall(r'"memberSince":"([^"]+)"', html)
-    if not since_m:
-        since_m = re.findall(r'data-uia="member-since"[^>]*>([^<]+)', html)
-    if since_m:
-        result["member_since"] = since_m[0].strip()
+    # Member since extraction - expanded patterns
+    since_patterns = [
+        r'"memberSince":"([^"]+)"',
+        r'data-uia="member-since"[^>]*>([^<]+)',
+        r'"registrationDate":"([^"]+)"',
+        r'"accountCreated":"([^"]+)"',
+        r'"signupDate":"([^"]+)"',
+        r'"createdDate":"([^"]+)"',
+        r'"joinDate":"([^"]+)"',
+        r'Member since[^>]*>([^<]+)',
+        r'Account created[^>]*>([^<]+)',
+        r'"memberSince":\{[^}]*"value":"([^"]+)"',
+        r'registration[^>]*>([^<]+\d{4})',
+    ]
+    for pat in since_patterns:
+        m = re.findall(pat, html, re.IGNORECASE)
+        if m:
+            result["member_since"] = m[0].strip()
+            break
 
+    # Next billing extraction - comprehensive patterns
     billing_patterns = [
         r'"nextBillingDate":\{"fieldType":"[^"]+","value":"([^"]+)"',
         r'"nextBillingDate":\{[^}]*"value"\s*:\s*"([^"]+)"',
@@ -468,25 +512,56 @@ def _extract_account_info(html: str, result: dict):
         r'Next (?:payment|billing)[: ]+([A-Z][a-z]+ \d{1,2},?\s*\d{4})',
         r'"formattedNextBillingDate"\s*:\s*"([^"]+)"',
         r'"nextBillingDateFormatted"\s*:\s*"([^"]+)"',
+        r'"nextBillDate":"([^"]+)"',
+        r'"subscriptionRenewalDate":"([^"]+)"',
+        r'class="[^"]*billing[^"]*"[^>]*>([^<]+\d{4})',
+        r'Next billing[^>]*>([^<]+\d{4})',
+        r'billing[^>]*>\s*<[^>]*>([A-Z][a-z]+ \d{1,2},?\s*\d{4})',
+        r'"billingDateLocalized":"([^"]+)"',
     ]
     for pat in billing_patterns:
-        billing_m = re.findall(pat, html)
+        billing_m = re.findall(pat, html, re.IGNORECASE)
         if billing_m:
             result["next_billing"] = billing_m[0].strip()
             break
 
-    streams_m = re.findall(r'"maxStreams":\s*(\d+)', html)
-    if not streams_m:
-        streams_m = re.findall(r'"numOfAllowedStreams":\s*(\d+)', html)
-    if streams_m:
-        result["max_streams"] = streams_m[0]
+    # Max streams extraction - expanded patterns
+    streams_patterns = [
+        r'"maxStreams":\s*(\d+)',
+        r'"numOfAllowedStreams":\s*(\d+)',
+        r'"maxAllowedStreams":\s*(\d+)',
+        r'"simultaneousStreams":\s*(\d+)',
+        r'"screenCount":\s*(\d+)',
+        r'"screens":\s*(\d+)',
+        r'"streamLimit":\s*(\d+)',
+        r'(\d+)\s*screens?',
+        r'(\d+)\s*simultaneous',
+        r'Maximum\s+(\d+)\s+streams?',
+        r'"maxSimultaneousStreams":\s*(\d+)',
+    ]
+    for pat in streams_patterns:
+        m = re.findall(pat, html, re.IGNORECASE)
+        if m:
+            result["max_streams"] = m[0]
+            break
 
-    quality_m = re.findall(r'"videoQuality":"([^"]+)"', html)
-    if not quality_m:
-        quality_m = re.findall(r'"streamQuality":"([^"]+)"', html)
-    if quality_m:
-        result["video_quality"] = quality_m[0]
+    # Video quality extraction
+    quality_patterns = [
+        r'"videoQuality":"([^"]+)"',
+        r'"streamQuality":"([^"]+)"',
+        r'"quality":"([^"]+)"',
+        r'"videoResolution":"([^"]+)"',
+        r'(Ultra HD|4K|HDR|HD|SD)',
+        r'quality[^>]*>([^<]+(?:HD|SD|Ultra|4K)[^<]*)',
+        r'"qualityTier":"([^"]+)"',
+    ]
+    for pat in quality_patterns:
+        m = re.findall(pat, html, re.IGNORECASE)
+        if m:
+            result["video_quality"] = m[0]
+            break
 
+    # Payment method extraction - enhanced
     payment_type = re.findall(r'"type":\{"fieldType":"String","value":"([^"]+)"\}[^}]*"paymentMethod"', html)
     payment_method = re.findall(r'"paymentMethod":\{"fieldType":"String","value":"([^"]+)"', html)
     if payment_type and payment_method:
@@ -496,54 +571,122 @@ def _extract_account_info(html: str, result: dict):
     elif payment_method:
         result["payment_method"] = payment_method[0]
     else:
-        pm = re.findall(r'"paymentType":"([^"]+)"', html)
-        if not pm:
-            pm = re.findall(r'data-uia="payment-type"[^>]*>([^<]+)', html)
-        if pm:
-            result["payment_method"] = pm[0].strip()
+        pm_patterns = [
+            r'"paymentType":"([^"]+)"',
+            r'data-uia="payment-type"[^>]*>([^<]+)',
+            r'"paymentMethodType":"([^"]+)"',
+            r'"billingPartner":"([^"]+)"',
+            r'"paymentProvider":"([^"]+)"',
+            r'(Visa|Mastercard|Amex|PayPal|iTunes|Apple Pay|Google Pay|Gift Card)',
+            r'class="[^"]*payment[^"]*"[^>]*>([^<]+(?:Visa|Master|Card|PayPal)[^<]*)',
+            r'"paymentMethodName":"([^"]+)"',
+            r'billed through[^>]*>([^<]+)',
+        ]
+        for pat in pm_patterns:
+            pm = re.findall(pat, html, re.IGNORECASE)
+            if pm:
+                result["payment_method"] = pm[0].strip()
+                break
 
-    phone_m = re.findall(r'"phoneNumber":"([^"]+)"', html)
-    if phone_m:
-        result["phone"] = phone_m[0]
+    # Phone extraction
+    phone_patterns = [
+        r'"phoneNumber":"([^"]+)"',
+        r'"mobileNumber":"([^"]+)"',
+        r'"phone":"([^"]+)"',
+        r'"contactNumber":"([^"]+)"',
+        r'"mobilePhone":"([^"]+)"',
+    ]
+    for pat in phone_patterns:
+        phone_m = re.findall(pat, html)
+        if phone_m:
+            result["phone"] = phone_m[0]
+            break
 
-    price_m = re.findall(r'"planPrice":"([^"]+)"', html)
-    if not price_m:
-        price_m = re.findall(r'"formattedPrice":"([^"]+)"', html)
-    if price_m:
-        result["plan_price"] = price_m[0]
+    # Price extraction
+    price_patterns = [
+        r'"planPrice":"([^"]+)"',
+        r'"formattedPrice":"([^"]+)"',
+        r'"price":"([^"]+)"',
+        r'"monthlyPrice":"([^"]+)"',
+        r'"subscriptionPrice":"([^"]+)"',
+        r'"planCost":"([^"]+)"',
+    ]
+    for pat in price_patterns:
+        price_m = re.findall(pat, html)
+        if price_m:
+            result["plan_price"] = price_m[0]
+            break
 
-    country_m = re.findall(r'"currentCountry":"([^"]+)"', html)
-    if not country_m:
-        country_m = re.findall(r'"countryOfSignUp":\{[^}]*"code"\s*:\s*"([^"]+)"', html)
-    if country_m:
-        result["country"] = country_m[0]
+    # Country extraction - expanded
+    country_patterns = [
+        r'"currentCountry":"([^"]+)"',
+        r'"countryOfSignUp":\{[^}]*"code"\s*:\s*"([^"]+)"',
+        r'"countryCode":"([^"]{2})"',
+        r'"signupCountry":"([^"]+)"',
+        r'"region":"([^"]{2})"',
+        r'"country":"([^"]{2})"',
+        r'"localeCountry":"([^"]+)"',
+        r'"userCountry":"([^"]+)"',
+    ]
+    for pat in country_patterns:
+        country_m = re.findall(pat, html)
+        if country_m:
+            result["country"] = country_m[0]
+            break
 
+    # Profiles extraction - expanded
     profiles_html = re.findall(r'"profileName":"([^"]+)"', html)
-    if profiles_html and not result["profiles"]:
-        result["profiles"] = list(set(profiles_html))
+    profiles_alt = re.findall(r'"firstName":"([^"]+)"', html)
+    profiles_alt2 = re.findall(r'"avatarName":"([^"]+)"', html)
+    profiles_alt3 = re.findall(r'"displayName":"([^"]+)"', html)
+    all_profiles = list(dict.fromkeys(profiles_html + profiles_alt + profiles_alt2 + profiles_alt3))[:5]
+    if all_profiles and not result.get("profiles"):
+        result["profiles"] = all_profiles
 
 
 def _classify_plan(result: dict):
+    """Classify subscription status. Expired/no sub accounts are marked as has_sub=False."""
     plan_lower = result.get("plan", "").lower()
     streams = result.get("max_streams", "")
     billing = result.get("next_billing", "Unknown")
     payment = result.get("payment_method", "Unknown")
 
-    no_sub_keywords = ["no active", "canceled", "cancelled", "expired", "free",
-                       "no subscription", "inactive", "not subscribed"]
+    # Keywords that indicate no active subscription
+    no_sub_keywords = [
+        "no active", "canceled", "cancelled", "expired", "free",
+        "no subscription", "inactive", "not subscribed", "ended",
+        "terminated", "suspended", "on hold", "paused", "hold",
+        "no plan", "subscription ended", "membership ended",
+        "reactivate", "resubscribe", "restart membership",
+        "finish sign", "choose your plan", "signup", "sign up",
+        "add a plan", "pick your plan", "membership required"
+    ]
+    
     if any(kw in plan_lower for kw in no_sub_keywords):
         result["has_sub"] = False
         return
 
-    has_plan = plan_lower and plan_lower != "unknown"
-    has_streams = str(streams) not in ("", "Unknown", "0")
-    has_billing = billing and billing != "Unknown"
-    has_payment = payment and payment != "Unknown"
+    # Check if billing indicates expiration
+    days = calc_days_remaining(billing)
+    if days == "Expired":
+        result["has_sub"] = False
+        return
 
+    # Check for explicit subscription status indicators in plan name
+    active_keywords = ["standard", "premium", "basic", "mobile", "ads", 
+                       "essentiel", "estándar", "padrão", "standaard",
+                       "plus", "ultra", "family", "duo", "starter"]
+    
+    has_plan = plan_lower and plan_lower != "unknown" and any(kw in plan_lower for kw in active_keywords)
+    has_streams = str(streams) not in ("", "Unknown", "0", "N/A")
+    has_billing = billing and billing != "Unknown" and days != "Expired" and days != "N/A"
+    has_payment = payment and payment != "Unknown" and payment != "Hidden"
+
+    # Scoring system for subscription detection
     score = sum([has_plan, has_streams, has_billing, has_payment])
     if score >= 2:
         result["has_sub"] = True
-    elif has_plan and any(t in plan_lower for t in ["standard", "premium", "basic", "mobile", "ads", "essentiel", "estándar", "padrão", "standaard"]):
+    elif has_plan and has_streams:
         result["has_sub"] = True
     elif has_billing and has_payment:
         result["has_sub"] = True
@@ -750,8 +893,8 @@ async def _deny(update: Update):
     await update.message.reply_text(
         "🚫 *Access Denied*\n"
         f"{DIV}\n"
-        "You don't have permission to use this bot\\.\n"
-        "Contact the admin to request access\\.",
+        "You don't have permission to use this bot.\n"
+        "Contact the admin to request access.",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
@@ -765,8 +908,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🚫 *Access Denied*\n"
             f"{DIV}\n"
-            "You don't have permission to use this bot\\.\n"
-            "Contact the admin to request access\\.",
+            "You don't have permission to use this bot.\n"
+            "Contact the admin to request access.",
             parse_mode=ParseMode.MARKDOWN_V2,
         )
         return
@@ -1124,6 +1267,7 @@ async def run_check_job(update: Update, context: ContextTypes.DEFAULT_TYPE, cook
                         "country": res.get("country", "?"), "days": days, "idx": idx,
                         "nfid": nfid, "snfid": snfid}
             else:
+                # Expired or no subscription = custom
                 email = res.get("email", "Unknown")
                 cookie_str = f"NetflixId={nfid}" + (f"; SecureNetflixId={snfid}" if snfid else "")
                 custom_line = (
